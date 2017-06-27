@@ -127,23 +127,12 @@ public class MousePlayer implements Playable {
 
         MouseEvent event = currentEvent;
 
-        if (desiredMillis < currentEvent.time) {
-            try {
-                file.seek(0);
-                file.readLine(); // first line contains screens
-
-                event = readNextEventFromFile();
-
-            } catch (IOException ex) {
-                logger.log(Level.SEVERE, null, ex);
-            }
-        }
-
         long marker;
         try {
             marker = file.getFilePointer();
 
-            MouseEvent next = readNextEventFromFile();
+            MouseEvent next = nextEvent;
+
             if (next == null) {
                 return;
             }
@@ -155,6 +144,11 @@ public class MousePlayer implements Playable {
                 next = readNextEventFromFile();
                 
                 if (next == null) { // no more events (end of file)
+                    pane.display(event);
+                    file.seek(0);
+                    file.readLine();
+                    currentEvent = readNextEventFromFile();
+                    nextEvent = readNextEventFromFile();
                     return;
                 }
             }
@@ -162,9 +156,7 @@ public class MousePlayer implements Playable {
             file.seek(marker);
             currentEvent = event;
             nextEvent = next;
-            
             pane.display(currentEvent);
-
         } catch (IOException ex) {
             logger.log(Level.SEVERE, null, ex);
         }
