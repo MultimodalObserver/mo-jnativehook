@@ -1,124 +1,124 @@
 package mo.mouse.visualization;
 
 import java.awt.*;
+import javafx.scene.canvas.Canvas;
+import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
+import javafx.geometry.Dimension2D;
+import javafx.geometry.Rectangle2D;
+import javafx.scene.layout.Pane;
 import java.util.ArrayList;
 import java.util.List;
-import javax.swing.JPanel;
 
-public class PlayerPane extends JPanel {
+public class PlayerPane extends Pane {
 
     private double scale;
-    private final List<Rectangle> screenBounds;
-
+    private final List<Rectangle2D> screenBounds;
     private Point virtualPoint;
     private Point screenPoint;
+    private Rectangle2D virtualBounds;
+    private Canvas canvas;
 
-    private Rectangle virtualBounds = new Rectangle(0, 0, 0, 0);
-
-    public PlayerPane(List<Rectangle> screens) {
+    public PlayerPane(List<Rectangle2D> screens) {
         screenBounds = screens;
-        for (Rectangle screen : screens) {
-            virtualBounds.add(screen);
+        virtualBounds = new Rectangle2D(0, 0, 0, 0);
+        screens.forEach(screen -> virtualBounds = union(virtualBounds, screen));
+
+        canvas = new Canvas();
+        getChildren().add(canvas);
+
+        canvas.widthProperty().bind(widthProperty());
+        canvas.heightProperty().bind(heightProperty());
+
+        widthProperty().addListener((obs, oldVal, newVal) -> refreshScale());
+        heightProperty().addListener((obs, oldVal, newVal) -> refreshScale());
+    }
+
+    private void refreshScale() {
+        double containerWidth = getWidth();
+        double containerHeight = getHeight();
+
+        if (containerWidth <= 0 || containerHeight <= 0) {
+            return;
         }
+
+        scale = getScaleFactorToFit(
+                new Dimension2D(virtualBounds.getWidth(), virtualBounds.getHeight()),
+                new Dimension2D(containerWidth, containerHeight)
+        );
+
+        redraw();
     }
 
-    @Override
-    public void invalidate() {
-        super.invalidate();
-        scale = getScaleFactorToFit(virtualBounds.getSize(), getSize());
-    }
-
-    @Override
-    public Dimension getPreferredSize() {
-        return new Dimension(200, 200);
-    }
-
-    @Override
-    protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
-
+    private void redraw() {
+        GraphicsContext gc = canvas.getGraphicsContext2D();
+        gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+        
         int xOffset = 0;
         int yOffset = 0;
-        List<Rectangle> scaledBounds = new ArrayList<>(screenBounds.size());
-        for (Rectangle bounds : screenBounds) {
-            bounds = scale(bounds);
-            scaledBounds.add(bounds);
-            if (bounds.x < xOffset) {
-                xOffset = bounds.x;
-            }
-            if (bounds.y < yOffset) {
-                yOffset = bounds.y;
-            }
+        List<Rectangle2D> scaledBounds = new ArrayList<>();
+
+        for (Rectangle2D bounds : screenBounds) {
+            Rectangle2D scaled = scale(bounds);
+            scaledBounds.add(scaled);
+            xOffset = Math.min(xOffset, (int) scaled.getMinX());
+            yOffset = Math.min(yOffset, (int) scaled.getMinY());
         }
-        if (xOffset < 0) {
-            xOffset *= -1;
-        }
-        if (yOffset < 0) {
-            yOffset *= -1;
+        xOffset = xOffset < 0 ? -xOffset : xOffset;
+        yOffset = yOffset < 0 ? -yOffset : yOffset;
+
+        gc.setFill(Color.DARKGRAY);
+        for (Rectangle2D bounds : scaledBounds) {
+            gc.fillRect(bounds.getMinX() + xOffset, bounds.getMinY() + yOffset, bounds.getWidth(), bounds.getHeight());
+            gc.setStroke(Color.GRAY);
+            gc.strokeRect(bounds.getMinX() + xOffset, bounds.getMinY() + yOffset, bounds.getWidth(), bounds.getHeight());
         }
 
-        Graphics2D g2d = (Graphics2D) g.create();
-        for (Rectangle bounds : scaledBounds) {
-            bounds.x += xOffset;
-            bounds.y += yOffset;
-            g2d.setColor(Color.DARK_GRAY);
-            g2d.fill(bounds);
-            g2d.setColor(Color.GRAY);
-            g2d.draw(bounds);
-        }
-
-        FontMetrics fm = g2d.getFontMetrics();
-
-        g2d.setColor(Color.WHITE);
         if (screenPoint != null) {
-            int x = 0;
-            int y = fm.getAscent();
-
-            g2d.drawString(screenPoint.x + "," + screenPoint.y, x, y);
-            screenPoint.x += xOffset;
-            screenPoint.y += yOffset;
-            screenPoint.x *= scale;
-            screenPoint.y *= scale;
-            g2d.fillOval(screenPoint.x - 2, screenPoint.y - 2, 4, 4);
+            gc.setFill(Color.RED);
+            gc.setFont(new Font(10));
+            gc.fillText(screenPoint.x + "," + screenPoint.y, 0, 10);
+            gc.fillOval(screenPoint.x * scale + xOffset - 2, screenPoint.y * scale + yOffset - 2, 4, 4);
         }
-
-        if (virtualPoint != null) {
-            int x = 0;
-            int y = fm.getAscent() + fm.getHeight();
-
-            g2d.drawString(virtualPoint.toString(), x, y);
-        }
-
-        g2d.dispose();
     }
 
-    protected Rectangle scale(Rectangle bounds) {
-        Rectangle scaled = new Rectangle(bounds);
-        scaled.x *= scale;
-        scaled.y *= scale;
-        scaled.width *= scale;
-        scaled.height *= scale;
-        return scaled;
+    private Rectangle2D scale(Rectangle2D bounds) {
+        return new Rectangle2D(bounds.getMinX() * scale, bounds.getMinY() * scale, bounds.getWidth() * scale, bounds.getHeight() * scale);
     }
 
     public void display(MouseEvent event) {
-        screenPoint = new Point(event.x, event.y);
-        repaint();
-    }
-
-    public static double getScaleFactorToFit(Dimension original, Dimension toFit) {
-        double dScale = 1d;
-        if (original != null && toFit != null) {
-            double dScaleWidth = getScaleFactor(original.width, toFit.width);
-            double dScaleHeight = getScaleFactor(original.height, toFit.height);
-            dScale = Math.min(dScaleHeight, dScaleWidth);
+        if (event == null) {
+            return;
         }
-        return dScale;
+
+        if (event.x < virtualBounds.getMinX() || event.x > virtualBounds.getMaxX()
+                || event.y < virtualBounds.getMinY() || event.y > virtualBounds.getMaxY()) {
+            return;
+        }
+
+        double adjustedX = Math.max(virtualBounds.getMinX(), Math.min(event.x, virtualBounds.getMaxX()));
+        double adjustedY = Math.max(virtualBounds.getMinY(), Math.min(event.y, virtualBounds.getMaxY()));
+
+        screenPoint = new Point((int) adjustedX, (int) adjustedY);
+        redraw();
     }
 
-    public static double getScaleFactor(int iMasterSize, int iTargetSize) {
-        double dScale = 1;
-        dScale = (double) iTargetSize / (double) iMasterSize;
-        return dScale;
+    public static double getScaleFactorToFit(Dimension2D original, Dimension2D toFit) {
+        double dScaleWidth = getScaleFactor(original.getWidth(), toFit.getWidth());
+        double dScaleHeight = getScaleFactor(original.getHeight(), toFit.getHeight());
+        return Math.min(dScaleHeight, dScaleWidth);
+    }
+
+    public static double getScaleFactor(double iMasterSize, double iTargetSize) {
+        return iTargetSize / iMasterSize;
+    }
+
+    private Rectangle2D union(Rectangle2D r1, Rectangle2D r2) {
+        double minX = Math.min(r1.getMinX(), r2.getMinX());
+        double minY = Math.min(r1.getMinY(), r2.getMinY());
+        double maxX = Math.max(r1.getMaxX(), r2.getMaxX());
+        double maxY = Math.max(r1.getMaxY(), r2.getMaxY());
+        return new Rectangle2D(minX, minY, maxX - minX, maxY - minY);
     }
 }

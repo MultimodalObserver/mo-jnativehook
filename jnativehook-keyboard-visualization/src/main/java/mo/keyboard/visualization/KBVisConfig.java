@@ -27,6 +27,12 @@ public class KBVisConfig implements VisualizableConfiguration {
         files = new ArrayList<>();
     }
     
+    public KBVisConfig(String id) {
+        this(); 
+        this.id = id;
+    }
+    
+  
     public void setId(String id) {
         this.id = id;
     }

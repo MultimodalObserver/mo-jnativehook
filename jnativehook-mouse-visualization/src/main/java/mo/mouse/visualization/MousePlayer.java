@@ -1,6 +1,5 @@
 package mo.mouse.visualization;
 
-import java.awt.Rectangle;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -8,32 +7,34 @@ import java.io.RandomAccessFile;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import javax.swing.SwingUtilities;
-import mo.core.ui.dockables.DockableElement;
-import mo.core.ui.dockables.DockablesRegistry;
+import java.util.concurrent.atomic.AtomicBoolean;
+import javafx.application.Platform;
+import javafx.geometry.Rectangle2D;
+import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
+import static mo.organization.ProjectOrganization.logger;
 import mo.visualization.Playable;
 import org.apache.commons.io.input.ReversedLinesFileReader;
 
 public class MousePlayer implements Playable {
 
     private long start, end, currentTime;
-
     private RandomAccessFile file;
-
     private PlayerPane pane;
-
     private MouseEvent currentEvent, nextEvent;
 
-    private static final Logger logger = Logger.getLogger(MousePlayer.class.getName());
-
     public MousePlayer(File file) {
+        this(file, getDefaultScreens());
+    }
+
+    public MousePlayer(File file, List<Rectangle2D> screens) {
         try {
             this.file = new RandomAccessFile(file, "r");
 
             String line = this.file.readLine();
-            List<Rectangle> bounds = parseScreens(line);
+            List<Rectangle2D> bounds = screens != null ? screens : parseScreens(line);
 
             String lastLine;
             try (ReversedLinesFileReader rev = new ReversedLinesFileReader(file, Charset.defaultCharset())) {
@@ -57,50 +58,62 @@ public class MousePlayer implements Playable {
                 nextEvent = readNextEventFromFile();
             }
 
-            
             pane = new PlayerPane(bounds);
-            
-            SwingUtilities.invokeLater(() -> {
-                
-                pane.display(currentEvent);
-                
-                try {
-                    DockableElement e = new DockableElement();
-                    e.add(pane);
-                    DockablesRegistry.getInstance().addAppWideDockable(e);
-                } catch (Exception ex) {
-                    logger.log(Level.INFO, null, ex);
+            pane.setPrefSize(800, 600);
+            pane.setMinSize(200, 200);
+
+            /*Platform.runLater(() -> {
+                Stage stage = new Stage();
+                stage.setTitle("Mouse Visualization");
+                Scene scene = new Scene(pane, 800, 600);
+                stage.setScene(scene);
+                stage.show();
+
+                if (currentEvent != null) {
+                    pane.display(currentEvent);
                 }
-            });
+            });*/
 
         } catch (FileNotFoundException ex) {
-            logger.log(Level.SEVERE, null, ex);
+            ex.printStackTrace();
         } catch (IOException ex) {
-            logger.log(Level.SEVERE, null, ex);
+            ex.printStackTrace();
         }
     }
 
+    public Node getPaneNode() {
+        return pane;
+    }
+
+    private static List<Rectangle2D> getDefaultScreens() {
+        List<Rectangle2D> screens = new ArrayList<>();
+        for (Screen screen : Screen.getScreens()) {
+            javafx.geometry.Rectangle2D bounds = screen.getBounds();
+            screens.add(new Rectangle2D(bounds.getMinX(), bounds.getMinY(), bounds.getWidth(), bounds.getHeight()));
+        }
+        return screens;
+    }
+
     private MouseEvent readNextEventFromFile() {
-        String line;
         try {
-            line = file.readLine();
+            String line = file.readLine();
             if (line != null) {
                 return parseEventFromLine(line);
             }
         } catch (IOException ex) {
-            logger.log(Level.SEVERE, null, ex);
+            ex.printStackTrace();
         }
         return null;
     }
 
     @Override
     public void pause() {
+        isPlaying.set(false);
     }
-    
+
     public long getCurrentTime() {
         return currentTime;
     }
-    
 
     @Override
     public void seek(long desiredMillis) {
@@ -113,9 +126,9 @@ public class MousePlayer implements Playable {
             seek(end);
             return;
         }
-        
+
         currentTime = desiredMillis;
-        
+
         if (desiredMillis == currentEvent.time) {
             pane.display(currentEvent);
             return;
@@ -130,19 +143,17 @@ public class MousePlayer implements Playable {
         if (desiredMillis < currentEvent.time) {
             try {
                 file.seek(0);
-                file.readLine(); // first line contains screens
-
+                file.readLine();
                 event = readNextEventFromFile();
 
             } catch (IOException ex) {
-                logger.log(Level.SEVERE, null, ex);
+                ex.printStackTrace();
             }
         }
 
         long marker;
         try {
             marker = file.getFilePointer();
-
             MouseEvent next = readNextEventFromFile();
             if (next == null) {
                 return;
@@ -150,11 +161,10 @@ public class MousePlayer implements Playable {
 
             while (!(next.time > desiredMillis)) {
                 event = next;
-
                 marker = file.getFilePointer();
                 next = readNextEventFromFile();
-                
-                if (next == null) { // no more events (end of file)
+
+                if (next == null) {
                     return;
                 }
             }
@@ -162,13 +172,57 @@ public class MousePlayer implements Playable {
             file.seek(marker);
             currentEvent = event;
             nextEvent = next;
-            
             pane.display(currentEvent);
 
         } catch (IOException ex) {
-            logger.log(Level.SEVERE, null, ex);
+            ex.printStackTrace();
         }
     }
+
+    private AtomicBoolean isPlaying = new AtomicBoolean(false);
+    private AtomicBoolean isStopped = new AtomicBoolean(false);
+
+    @Override
+    public void play(long millis) {
+        if (isPlaying.get()) {
+            return;
+        }
+
+        isPlaying.set(true);
+        isStopped.set(false);
+
+        new Thread(() -> {
+            try {
+                while (!isStopped.get() && currentEvent != null && currentTime <= end) {
+                    if (currentEvent == null) {
+                        break;
+                    }
+
+                    Platform.runLater(() -> pane.display(currentEvent));
+
+                    currentEvent = nextEvent;
+                    nextEvent = readNextEventFromFile();
+
+                    if (nextEvent == null) {
+                        break;
+                    }
+
+                    long delay = Math.max(0, nextEvent.time - currentEvent.time);
+                    Thread.sleep(delay);
+
+                    currentTime = nextEvent.time;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                isPlaying.set(false);
+            }
+        }).start();
+
+    }
+    
+    /*
+    original play method, works with Gameloop in the original version of MO.
     
     @Override
     public void play(long millis) {
@@ -179,11 +233,21 @@ public class MousePlayer implements Playable {
         } else {
             seek(millis);
         }
-    }
-    
+    }*/
+
     @Override
     public void stop() {
-        // do nothing
+        isStopped.set(true);
+        isPlaying.set(false);
+        currentEvent = null;
+        try {
+            file.seek(0);
+            file.readLine();
+            currentEvent = readNextEventFromFile();
+            nextEvent = readNextEventFromFile();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private MouseEvent parseEventFromLine(String line) {
@@ -252,18 +316,21 @@ public class MousePlayer implements Playable {
         return end;
     }
 
-    private static List<Rectangle> parseScreens(String line) {
-        ArrayList<Rectangle> screens = new ArrayList<>();
+    public void sync(boolean isSynchronized) {
+    }
+
+    private static List<Rectangle2D> parseScreens(String line) {
+        ArrayList<Rectangle2D> screens = new ArrayList<>();
         if (line.contains(";")) {
-            String screensStrs[] = line.split(";");
+            String[] screensStrs = line.split(";");
             for (String screenStr : screensStrs) {
-                Rectangle r = parseRectangle(screenStr);
+                Rectangle2D r = parseRectangle(screenStr);
                 if (r != null) {
                     screens.add(r);
                 }
             }
         } else {
-            Rectangle r = parseRectangle(line);
+            Rectangle2D r = parseRectangle(line);
             if (r != null) {
                 screens.add(r);
             }
@@ -271,35 +338,31 @@ public class MousePlayer implements Playable {
         return screens;
     }
 
-    private static Rectangle parseRectangle(String str) {
+    private static Rectangle2D parseRectangle(String str) {
         int x, y, w, h, i;
-
         if (str.contains("x=")) {
             i = str.indexOf(",");
             x = Integer.parseInt(str.substring(str.indexOf("x=") + 2, i));
         } else {
             return null;
         }
-
         if (str.contains("y=")) {
             i = str.indexOf(",", i + 1);
             y = Integer.parseInt(str.substring(str.indexOf("y=") + 2, i));
         } else {
             return null;
         }
-
         if (str.contains("width=")) {
             i = str.indexOf(",", i + 1);
             w = Integer.parseInt(str.substring(str.indexOf("width=") + 6, i));
         } else {
             return null;
         }
-
         if (str.contains("height=")) {
-            h = Integer.parseInt(str.substring(str.indexOf("height=") + 7, str.length()));
+            h = Integer.parseInt(str.substring(str.indexOf("height=") + 7));
         } else {
             return null;
         }
-        return new Rectangle(x, y, w, h);
+        return new Rectangle2D(x, y, w, h);
     }
 }

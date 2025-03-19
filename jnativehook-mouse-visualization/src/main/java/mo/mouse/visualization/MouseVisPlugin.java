@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javafx.stage.Stage;
 import mo.core.plugin.Extends;
 import mo.core.plugin.Extension;
 import mo.organization.Configuration;
@@ -46,7 +47,8 @@ public class MouseVisPlugin implements VisualizationProvider {
     public Configuration initNewConfiguration(ProjectOrganization organization) {
         MouseVisConfigDialog d = new MouseVisConfigDialog(organization);
         
-        if (d.showDialog()) {
+        Stage stage = new Stage();
+        if (d.showDialog(stage)) {
             MouseVisConfiguration c = new MouseVisConfiguration();
             c.setId(d.getConfigurationName());
             configurations.add(c);

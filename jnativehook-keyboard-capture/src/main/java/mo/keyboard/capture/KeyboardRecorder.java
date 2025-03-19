@@ -14,7 +14,6 @@ import mo.organization.Participant;
 import mo.organization.ProjectOrganization;
 import org.jnativehook.GlobalScreen;
 import org.jnativehook.NativeHookException;
-import org.jnativehook.SwingDispatchService;
 import org.jnativehook.keyboard.NativeKeyEvent;
 import org.jnativehook.keyboard.NativeKeyListener;
 
@@ -43,7 +42,6 @@ public class KeyboardRecorder implements NativeKeyListener {
         globalScreenLogger.setLevel(Level.OFF);
 
         GlobalScreen.addNativeKeyListener(this);
-        GlobalScreen.setEventDispatcher(new SwingDispatchService());
 
         createFile(stageFolder);
     }

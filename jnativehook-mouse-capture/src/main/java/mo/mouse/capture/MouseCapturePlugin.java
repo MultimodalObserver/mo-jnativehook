@@ -41,8 +41,7 @@ public class MouseCapturePlugin implements CaptureProvider {
 
     @Override
     public Configuration initNewConfiguration(ProjectOrganization organization) {
-        MouseCaptureConfigurationDialog d 
-                = new MouseCaptureConfigurationDialog(organization);
+        MouseCaptureConfigurationDialog d = new MouseCaptureConfigurationDialog(organization, null);
         boolean accepted = d.showDialog();
         if (accepted) {
             MouseCaptureConfiguration c 

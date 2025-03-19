@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javafx.embed.swing.JFXPanel;
 import mo.organization.Configuration;
 import mo.visualization.Playable;
 import mo.visualization.VisualizableConfiguration;
@@ -16,11 +17,17 @@ public class MouseVisConfiguration implements VisualizableConfiguration {
     private List<String> compatibleCreators;
     private List<File> files;
     private MousePlayer player;
+    
 
     public MouseVisConfiguration() {
         compatibleCreators = new ArrayList<>();
         compatibleCreators.add("mo.mouse.capture.MouseRecorder");
         files = new ArrayList<>();
+    }
+
+    public MouseVisConfiguration(String id) {
+        this(); 
+        this.id = id;
     }
 
     @Override
@@ -30,7 +37,7 @@ public class MouseVisConfiguration implements VisualizableConfiguration {
 
     @Override
     public File toFile(File parent) {
-        File f = new File(parent, "mouse-visualization_"+id+".xml");
+        File f = new File(parent, "mouse-visualization_" + id + ".xml");
         try {
             f.createNewFile();
         } catch (IOException ex) {
@@ -44,44 +51,31 @@ public class MouseVisConfiguration implements VisualizableConfiguration {
         String fileName = file.getName();
 
         if (fileName.contains("_") && fileName.contains(".")) {
-            String name = fileName.substring(fileName.indexOf("_")+1, fileName.lastIndexOf("."));
-            MouseVisConfiguration config = new MouseVisConfiguration();
-            config.id = name;
-            return config;
+            String name = fileName.substring(fileName.indexOf("_") + 1, fileName.lastIndexOf("."));
+            return new MouseVisConfiguration(name);
         }
         return null;
     }
 
     @Override
     public List<String> getCompatibleCreators() {
-       return compatibleCreators;
+        return compatibleCreators;
     }
-    
+
     public void setId(String id) {
         this.id = id;
     }
 
     @Override
     public void addFile(File file) {
-        if ( !files.contains(file) ) {
+        if (!files.contains(file)) {
             this.files.add(file);
         }
     }
 
     @Override
     public void removeFile(File file) {
-        File toRemove = null;
-        
-        for (File f : files) {
-            if (f.equals(file)) {
-                toRemove = f;
-                break;
-            }
-        }
-        
-        if (toRemove != null) {
-            files.remove(toRemove);
-        }
+        files.remove(file);
     }
 
     private void ensurePlayerCreated() {
@@ -89,11 +83,10 @@ public class MouseVisConfiguration implements VisualizableConfiguration {
             player = new MousePlayer(files.get(0));
         }
     }
-    
+
     @Override
     public Playable getPlayer() {
         ensurePlayerCreated();
         return player;
     }
-
 }

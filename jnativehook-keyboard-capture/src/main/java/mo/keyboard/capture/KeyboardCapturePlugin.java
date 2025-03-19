@@ -43,7 +43,7 @@ public class KeyboardCapturePlugin implements CaptureProvider {
     public Configuration initNewConfiguration(ProjectOrganization organization) {
 
         KeyboardCaptureConfigurationDialog dialog
-                = new KeyboardCaptureConfigurationDialog(organization);
+                = new KeyboardCaptureConfigurationDialog(organization, null);
 
         boolean accepted = dialog.showDialog();
 

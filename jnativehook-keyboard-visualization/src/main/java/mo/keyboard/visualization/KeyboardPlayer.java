@@ -1,32 +1,32 @@
 package mo.keyboard.visualization;
 
+import javafx.application.Platform;
+import javafx.scene.Node;
+import mo.visualization.Playable;
+import org.apache.commons.io.input.ReversedLinesFileReader;
+
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.Charset;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.swing.SwingUtilities;
-import mo.core.ui.dockables.DockableElement;
-import mo.core.ui.dockables.DockablesRegistry;
-import mo.visualization.Playable;
-import org.apache.commons.io.input.ReversedLinesFileReader;
+import javafx.stage.Stage;
 
 public class KeyboardPlayer implements Playable {
 
     private long start;
     private long end;
     private boolean stopped = false;
-    
     private KeyboardEvent current;
     private KeyboardEvent nextEvent;
-
-    private DisplayPanel pane;
     private RandomAccessFile file;
-    
+    private DisplayPanel pane;
+    private AtomicBoolean isPlaying = new AtomicBoolean(false);
+
     private static final Logger logger = Logger.getLogger(KeyboardPlayer.class.getName());
-    
+
     public KeyboardPlayer(File f) {
         try {
             file = new RandomAccessFile(f, "r");
@@ -36,50 +36,58 @@ public class KeyboardPlayer implements Playable {
                 start = current.time;
                 nextEvent = readNextEventFromFile();
             }
-            
             pane = new DisplayPanel();
-            SwingUtilities.invokeLater(() -> {
-                try {
-                    DockableElement e = new DockableElement();
-                    e.add(pane.getPanel());
-                    DockablesRegistry.getInstance().addAppWideDockable(e);
-                } catch (Exception ex) {
-                    logger.log(Level.INFO, null, ex);
-                }
-            });
+            
+            /*Platform.runLater(() -> {
+                Stage stage = new Stage();
+                stage.setTitle("Keyboard Visualization");
+                stage.setScene(pane.getScene());
+                stage.show();
 
-        } catch (FileNotFoundException ex) {
-            logger.log(Level.SEVERE, null, ex);
-        }
-    }
-
-    private void readLastTime(File f) {
-        try (ReversedLinesFileReader rev = new ReversedLinesFileReader(f, Charset.defaultCharset())) {
-            String lastLine = null;
-            do {
-                lastLine = rev.readLine();
-                if (lastLine == null) {
-                    return;
+                if (current != null) {
+                    pane.display(current);
                 }
-            } while (lastLine.trim().isEmpty());
-            KeyboardEvent e = parseEventFromLine(lastLine);
-            end = e.time;
-            rev.close();
+            });*/
+
+            if (current != null) {
+                pane.display(current);
+            }
         } catch (IOException ex) {
             logger.log(Level.SEVERE, null, ex);
         }
     }
 
+    public Node getPaneNode() {
+        return pane.getPanel();
+    }
+
+    private void readLastTime(File f) {
+        try (ReversedLinesFileReader rev = new ReversedLinesFileReader(f, Charset.defaultCharset())) {
+            String lastLine;
+            do {
+                lastLine = rev.readLine();
+                if (lastLine == null || lastLine.trim().isEmpty()) {
+                    return; 
+                }
+            } while (lastLine.trim().isEmpty());
+
+            KeyboardEvent e = parseEventFromLine(lastLine);
+            if (e != null) {
+                end = e.time;
+            } else {
+                logger.log(Level.SEVERE, "Unable to parse last line: " + lastLine);
+            }
+        } catch (IOException ex) {
+            logger.log(Level.SEVERE, "Error reading last line from file", ex);
+        }
+    }
+
+
     private KeyboardEvent readNextEventFromFile() {
         try {
             String line = file.readLine();
             if (line != null) {
-                KeyboardEvent ev = parseEventFromLine(line);
-                if (ev != null) {
-                    return ev;
-                } else {
-                    return null;
-                }
+                return parseEventFromLine(line);
             }
         } catch (IOException ex) {
             logger.log(Level.SEVERE, null, ex);
@@ -88,70 +96,62 @@ public class KeyboardPlayer implements Playable {
     }
 
     private KeyboardEvent parseEventFromLine(String line) {
-        String[] parts = line.split(",");
+        try {
+            int firstComma = line.indexOf(',');
+            int secondComma = line.indexOf(',', firstComma + 1);
+            int thirdComma = line.indexOf(',', secondComma + 1);
+            int fourthComma = line.indexOf(',', thirdComma + 1);
+            int fifthComma = line.indexOf(',', fourthComma + 1);
 
-        boolean hasModifiers;
-        switch (parts.length) {
-            case 7:
-                hasModifiers = false;
-                break;
-            case 8:
-                hasModifiers = true;
-                break;
-            default:
-                return null;
+            long time = Long.parseLong(line.substring(0, firstComma));
+            String eventTypeStr = line.substring(firstComma + 1, secondComma);
+            String keyCodeStr = line.substring(secondComma + 1, thirdComma);
+            String keyTextStr = line.substring(thirdComma + 1, fourthComma);
+
+            int keyCharIndex = line.indexOf("keyChar=", fourthComma + 1);
+            char keyChar = line.charAt(keyCharIndex + 9);
+
+            int keyLocationIndex = line.indexOf("keyLocation=", fourthComma + 1);
+            String keyLocationStr = line.substring(keyLocationIndex + 12, line.indexOf(',', keyLocationIndex));
+
+            int rawCodeIndex = line.indexOf("rawCode=", keyLocationIndex);
+            String rawCodeStr = line.substring(rawCodeIndex + 8);
+
+            KeyboardEvent ev = new KeyboardEvent();
+            ev.time = time;
+            ev.type = KeyboardEventType.getEventTypeFromString(eventTypeStr);
+            ev.keyCode = Integer.parseInt(keyCodeStr.split("=")[1]);
+            ev.keyText = keyTextStr.split("=")[1];
+            ev.keyChar = keyChar;
+            ev.keyLocation = KeyLocation.getKeyLocationFromString(keyLocationStr);
+            ev.rawCode = Integer.parseInt(rawCodeStr);
+
+            return ev;
+
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "Error al analizar la linea: " + line, e);
+            return null;
         }
-
-        KeyboardEvent ev = new KeyboardEvent();
-        ev.time = Long.parseLong(parts[0]);
-        ev.type = KeyboardEventType.getEventTypeFromString(parts[1]);
-        ev.keyCode = Integer.parseInt(parts[2].split("=")[1]);
-        ev.keyText = parts[3].split("=")[1];
-
-        if (parts[4].contains("'")) {
-            ev.keyChar = parts[4].charAt(parts[4].length() - 2);
-        }
-
-        int partsIndex = 5;
-        if (hasModifiers) {
-            ev.modifiers = parts[5].split("=")[1];
-            partsIndex++;
-        }
-
-        ev.keyLocation = KeyLocation.getKeyLocationFromString(parts[partsIndex].split("=")[1]);
-        partsIndex++;
-
-        ev.rawCode = Integer.parseInt(parts[partsIndex].split("=")[1]);
-
-        if (ev.type.equals(KeyboardEventType.NATIVE_KEY_TYPED)
-                && ev.keyCode == 0 && ev.rawCode == 13) {
-            ev.keyChar = '\n';
-        }
-
-        return ev;
     }
 
     @Override
     public void pause() {
+        isPlaying.set(false);
     }
 
     @Override
     public void seek(long desiredMillis) {
-        if (desiredMillis < start
-                || desiredMillis > end
-                || desiredMillis == current.time
-                || (desiredMillis > current.time &&
-                    desiredMillis < nextEvent.time)) {
+        if (desiredMillis < start || desiredMillis > end || desiredMillis == current.time
+                || (desiredMillis > current.time && desiredMillis < nextEvent.time)) {
             return;
-        }       
-        
+        }
+
         KeyboardEvent event = current;
 
         if (desiredMillis < current.time) {
             try {
                 file.seek(0);
                 event = readNextEventFromFile();
-
             } catch (IOException ex) {
                 logger.log(Level.SEVERE, null, ex);
             }
@@ -168,11 +168,9 @@ public class KeyboardPlayer implements Playable {
 
             while (!(next.time > desiredMillis)) {
                 event = next;
-
                 marker = file.getFilePointer();
                 next = readNextEventFromFile();
-                
-                if (next == null) { // no more events (end of file)
+                if (next == null) {
                     return;
                 }
             }
@@ -186,14 +184,6 @@ public class KeyboardPlayer implements Playable {
         }
     }
 
-    private void display(KeyboardEvent ev) {
-        if (stopped) {
-            pane.clear();
-            stopped = false;
-        }
-        pane.display(ev);
-    }
-    
     @Override
     public long getStart() {
         return start;
@@ -204,6 +194,43 @@ public class KeyboardPlayer implements Playable {
         return end;
     }
 
+    @Override
+    public void play(long millis) {
+        if (isPlaying.get()) {
+            return;
+        }
+
+        isPlaying.set(true);
+        stopped = false;
+
+        new Thread(() -> {
+            try {
+                while (!stopped && current != null && current.time <= end) {
+                    if (current.type == KeyboardEventType.NATIVE_KEY_TYPED) {
+                        Platform.runLater(() -> pane.display(current));
+                    }
+
+                    if (nextEvent == null) {
+                        break;
+                    }
+
+                    long delay = Math.max(0, nextEvent.time - current.time);
+                    Thread.sleep(delay);
+
+                    current = nextEvent;
+                    nextEvent = readNextEventFromFile();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                isPlaying.set(false);
+            }
+        }).start();
+    }
+    
+    /*
+    
+    //original play method, works with Gameloop in the original version of MO.
     @Override
     public void play(long millis) {
         if ( (millis >= start) && (millis <= end)) {
@@ -217,10 +244,25 @@ public class KeyboardPlayer implements Playable {
             }
         }
     }
+    
+    */
+
 
     @Override
     public void stop() {
+        isPlaying.set(false);
         stopped = true;
-        pause();
+        pane.clear();
+        try {
+            file.seek(0);
+            current = readNextEventFromFile();
+            nextEvent = readNextEventFromFile();
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, null, e);
+        }
+    }
+    
+    public void sync(boolean isSynchronized) {
+        System.out.println("Sync status: " + isSynchronized);
     }
 }

@@ -19,7 +19,6 @@ import mo.organization.Participant;
 import mo.organization.ProjectOrganization;
 import org.jnativehook.GlobalScreen;
 import org.jnativehook.NativeHookException;
-import org.jnativehook.SwingDispatchService;
 import org.jnativehook.mouse.*;
 
 public class MouseRecorder
@@ -54,8 +53,6 @@ public class MouseRecorder
         GlobalScreen.addNativeMouseListener(this);
         GlobalScreen.addNativeMouseMotionListener(this);
         GlobalScreen.addNativeMouseWheelListener(this);
-
-        GlobalScreen.setEventDispatcher(new SwingDispatchService());
 
         createFile(stageFolder);
     }

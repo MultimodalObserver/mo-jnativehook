@@ -1,58 +1,46 @@
 package mo.keyboard.visualization;
 
-import java.awt.BorderLayout;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
+import javafx.scene.Scene;
+import javafx.scene.control.TextArea;
+import javafx.scene.layout.VBox;
 
 public class DisplayPanel {
-
-    private final JTextArea text;
-    private final JPanel internal;
+    
+    private final TextArea text;
+    private final VBox internal;
+    private Scene scene;
+    
 
     public DisplayPanel() {
-        //super()
-        text = new JTextArea();
+        text = new TextArea();
         text.setEditable(false);
-
+        text.setWrapText(true);
         text.setText("");
 
-        JScrollPane scroll = new JScrollPane(text);
-
-        //setLayout(new BorderLayout());
-        //add(scroll, BorderLayout.CENTER);
-        internal = new JPanel();
-        internal.setLayout(new BorderLayout());
-        internal.add(scroll, BorderLayout.CENTER);
-        internal.add(scroll);
-
+        internal = new VBox();
+        internal.getChildren().add(text);
+        
+    }
+    
+    public Scene getScene() {
+        return scene;
     }
 
-    public JPanel getPanel() {
+    public VBox getPanel() {
         return internal;
     }
-
     public void display(KeyboardEvent event) {
-
-        if (event.type.equals(KeyboardEventType.NATIVE_KEY_TYPED) /*|| 
-                    event.type.equals(KeyboardEventType.NATIVE_KEY_PRESSED)*/) {
-
-            if (event.rawCode == 8) {
-                text.setText(text.getText().substring(0, text.getText().length() - 1));
-            } else {
-                //String str = String.valueOf(Character.forDigit(event.keyCode, 0));
-                //logger.log(Level.INFO, Character.toString((char) event.keyChar));
-                text.append(Character.toString(event.keyChar));
-                //text.setText(text.getText()+str);
+        if (event.type == KeyboardEventType.NATIVE_KEY_TYPED) {
+            String currentText = text.getText();
+            if (event.keyChar != ' ' || !currentText.endsWith(" ")) {
+                text.appendText(Character.toString(event.keyChar));
             }
-
-//                SwingUtilities.invokeLater(() -> {
-//                    
-//                });
         }
     }
 
+
+
     public void clear() {
-        text.setText("");
+        text.clear();
     }
 }
